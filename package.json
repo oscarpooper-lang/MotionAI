@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "demo": "npm run build && node examples/first-motion.mjs",
     "test": "vitest run src",
     "typecheck": "tsc --noEmit"
   },

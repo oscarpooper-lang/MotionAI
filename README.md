@@ -64,10 +64,13 @@ This assumes `document` is a valid version-1 composition with a `logo` layer and
 
 ```sh
 npm install
+npm run demo
 npm test
 npm run typecheck
 npm run build
 ```
+
+`npm run demo` builds and runs a complete example in [`examples/first-motion.mjs`](examples/first-motion.mjs). It composes a tagged horizontal move with a deliberate reveal, applies the sequence to a layer, and prints the rendered frame at 1.1 seconds.
 
 ## The Co-Author
 
