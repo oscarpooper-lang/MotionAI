@@ -72,6 +72,26 @@ npm run build
 
 `npm run demo` builds and runs a complete example in [`examples/first-motion.mjs`](examples/first-motion.mjs). It composes a tagged horizontal move with a deliberate reveal, applies the sequence to a layer, and prints the rendered frame at 1.1 seconds.
 
+## Motion Studio
+
+Start the browser editor with:
+
+```sh
+npm run dev
+```
+
+Open the local URL printed by Vite. The default workflow is co-author-first: describe the motion, review its proposed behaviors on the preview and timeline, then apply or discard the draft. Choose **Manual** when you want to directly edit timing and intent. Accepted compositions save in browser storage and can be exported as Motion JSON.
+
+The prompt composer is currently a deterministic local matcher for intent words and behavior templates. It is not connected to a language model yet; the UI labels this as prototype mode rather than presenting local rules as AI output.
+
+## AI Agent Tools (MCP)
+
+An MCP-capable AI host can connect to the stdio server configured in [`.vscode/mcp.json`](.vscode/mcp.json). Build first with `npm run build`; the host can then start the configured server. To launch it manually, run `npm run mcp` from the repository root.
+
+The server exposes tools to read or replace a Motion JSON document, add a layer, apply an intent-tagged tween, capture a frame, list the motion vocabulary, and request structural critique. This gives a host model actions and observations; it does not provide or run the language model itself.
+
+The MCP workspace is currently in memory and isolated per server process; it does not yet share live state with the browser editor's local storage. Frame capture is rasterized to standard PNG with [resvg-js](https://github.com/yisibl/resvg-js), but the image still shows labeled transform proxies, not final artwork. Critique checks timing and opacity bounds, not visual quality or taste. Connecting both clients to one project service and adding a real visual asset model are still required for the complete co-author workflow.
+
 ## The Co-Author
 
 The AI should work in the motion language, not merely operate editor controls or emit opaque files. The authoring loop is propose, render, inspect, critique, and revise. It should use the behavior vocabulary, see captured frames, explain semantic changes, offer alternatives, and retain explicit, user-controlled taste preferences.
@@ -79,9 +99,9 @@ The AI should work in the motion language, not merely operate editor controls or
 ## First 90 Days
 
 1. **Implemented:** versioned document model, validation, and deterministic `render(comp, t)` evaluator.
-2. **In progress:** expand the behavior vocabulary and composition rules; the initial `tween`, `sequence`, `parallel`, and `deliberateReveal` APIs are implemented. Add timeline visualization next.
-3. **Video export:** render deterministic frames using controlled time and encode an MP4. Verify that exported timing matches preview timing.
-4. **AI authoring loop:** expose behavior composition, frame capture, and critique. Demonstrate a complete propose-render-review-revise cycle.
+2. **In progress:** expand the behavior vocabulary, composition rules, and timeline editing; the first browser studio and local prompt-to-proposal workflow are implemented.
+3. **Video export:** evaluate [Remotion](https://github.com/remotion-dev/remotion)'s `@remotion/renderer` as an MP4 target for the existing React preview, after checking its runtime and licensing fit. Verify that exported timing matches preview timing.
+4. **Model-backed co-author:** connect a provider to the prompt-first UI, share project state between the editor and MCP server, then add frame-aware critique and revise loops. Current MCP tools and local phrase matching are foundations, not the final AI implementation.
 5. **Semantic search v0:** index a project using measurable motion features and test whether queries retrieve relevant examples.
 6. **Second compiler target:** add CSS and WAAPI after documenting which source constructs map faithfully and which do not.
 

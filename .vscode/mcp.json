@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "motionai-motion-language": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/dist/src/mcp/server.js"]
+    }
+  }
+}
