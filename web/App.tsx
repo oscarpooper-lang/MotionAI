@@ -22,6 +22,14 @@ import {
 	type MotionFrame,
 } from "../src/index.js";
 import { draftMotionProposal, type BehaviorEntry, type MotionProposal, type Preset } from "./coauthor.js";
+import {
+	createProjectRecord,
+	LEGACY_STORAGE_KEY,
+	parseMotionProject,
+	PROJECT_STORAGE_KEY,
+	serializeProject,
+	type MotionProject,
+} from "./projectStore.js";
 
 const PROJECT_DURATION = 4;
 const STORAGE_KEY = "motionai.studio.v1";
@@ -81,19 +89,32 @@ function buildDocument(entries: BehaviorEntry[]): MotionDocument {
 	);
 }
 
-function loadEntries(): BehaviorEntry[] {
+function loadProject(): MotionProject {
 	try {
-		const stored = localStorage.getItem(STORAGE_KEY);
-		if (stored) {
-			const parsed = JSON.parse(stored) as Array<Omit<BehaviorEntry, "easing"> & { easing?: BehaviorEntry["easing"] }>;
+		const storedProject = localStorage.getItem(PROJECT_STORAGE_KEY);
+		if (storedProject) {
+			return parseMotionProject(storedProject);
+		}
+		const storedEntries = localStorage.getItem(STORAGE_KEY);
+		if (storedEntries) {
+			const parsed = JSON.parse(storedEntries) as Array<Omit<BehaviorEntry, "easing"> & { easing?: BehaviorEntry["easing"] }>;
 			const normalized = parsed.map((entry) => ({ ...entry, easing: entry.easing ?? "easeOut" }));
-			buildDocument(normalized);
-			return normalized;
+			const document = buildDocument(normalized);
+			return createProjectRecord("Untitled composition", document, normalized);
+		}
+		const legacyProject = localStorage.getItem(LEGACY_STORAGE_KEY);
+		if (legacyProject) {
+			const parsed = JSON.parse(legacyProject) as Array<Omit<BehaviorEntry, "easing"> & { easing?: BehaviorEntry["easing"] }>;
+			const normalized = parsed.map((entry) => ({ ...entry, easing: entry.easing ?? "easeOut" }));
+			const document = buildDocument(normalized);
+			return createProjectRecord("Untitled composition", document, normalized);
 		}
 	} catch {
+		localStorage.removeItem(PROJECT_STORAGE_KEY);
 		localStorage.removeItem(STORAGE_KEY);
+		localStorage.removeItem(LEGACY_STORAGE_KEY);
 	}
-	return starterEntries;
+	return createProjectRecord("Untitled composition", emptyDocument, starterEntries);
 }
 
 function formatTime(time: number): string {
@@ -109,7 +130,10 @@ function describePreset(preset: Preset): string {
 }
 
 function App() {
-	const [entries, setEntries] = useState(loadEntries);
+	const initialProject = loadProject();
+	const [project, setProject] = useState<MotionProject>(initialProject);
+	const [entries, setEntries] = useState<BehaviorEntry[]>(initialProject.entries.length ? initialProject.entries : starterEntries);
+	const [projectName, setProjectName] = useState(initialProject.name);
 	const [selectedId, setSelectedId] = useState(starterEntries[1]!.id);
 	const [manualMode, setManualMode] = useState(false);
 	const [prompt, setPrompt] = useState("");
@@ -119,6 +143,7 @@ function App() {
 	const [playing, setPlaying] = useState(false);
 	const [buildError, setBuildError] = useState("");
 	const playheadRef = useRef(0);
+	const importInputRef = useRef<HTMLInputElement | null>(null);
 
 	const displayedEntries = proposal ? [...entries, ...proposal.behaviors] : entries;
 	let document = emptyDocument;
@@ -136,12 +161,22 @@ function App() {
 
 	useEffect(() => {
 		try {
+			const document = buildDocument(entries);
+			const nextProject = {
+				...project,
+				name: projectName.trim() || "Untitled composition",
+				entries,
+				document,
+				updatedAt: new Date().toISOString(),
+			};
+			setProject(nextProject);
+			localStorage.setItem(PROJECT_STORAGE_KEY, serializeProject(nextProject));
 			localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
 			setBuildError("");
 		} catch (error) {
 			setBuildError(error instanceof Error ? error.message : "Could not save locally");
 		}
-	}, [entries]);
+	}, [entries, projectName]);
 
 	useEffect(() => {
 		if (!playing || errorMessage) return;
@@ -257,13 +292,42 @@ function App() {
 	}
 
 	function exportDocument() {
-		const blob = new Blob([JSON.stringify(savedDocument, null, 2)], { type: "application/json" });
+		const exportProject = {
+			...project,
+			name: projectName.trim() || "Untitled composition",
+			entries,
+			document: savedDocument,
+			updatedAt: new Date().toISOString(),
+		};
+		const blob = new Blob([serializeProject(exportProject)], { type: "application/json" });
 		const url = URL.createObjectURL(blob);
 		const link = window.document.createElement("a");
 		link.href = url;
-		link.download = "motionai-composition.json";
+		link.download = `${(exportProject.name || "motionai-project").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "motionai-project"}.json`;
 		link.click();
 		URL.revokeObjectURL(url);
+	}
+
+	function importDocumentFile(file: File | null) {
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = () => {
+			try {
+				const imported = parseMotionProject(String(reader.result ?? ""));
+				if (!Array.isArray(imported.entries) || !imported.entries.length) {
+					setBuildError("This project file has no motion entries to restore.");
+					return;
+				}
+				setProject(imported);
+				setProjectName(imported.name);
+				setEntries(imported.entries);
+				setSelectedId(imported.entries[0]?.id ?? starterEntries[0]!.id);
+				setBuildError("");
+			} catch (error) {
+				setBuildError(error instanceof Error ? error.message : "Could not import project JSON");
+			}
+		};
+		reader.readAsText(file);
 	}
 
 	function togglePlayback() {
@@ -284,18 +348,35 @@ function App() {
 					<span className="workspace-label">STUDIO</span>
 				</div>
 				<div className="project-title">
-					<strong>Untitled composition</strong>
+					<input
+						className="project-name-input"
+						value={projectName}
+						onChange={(event) => setProjectName(event.target.value)}
+						aria-label="Project name"
+					/>
 					<span className="save-state"><span className="save-dot" />Saved locally</span>
 				</div>
-				<button className="export-button" onClick={exportDocument} title="Export composition JSON">
-					<Download size={15} /> <span>Export JSON</span>
-				</button>
+				<div className="header-button-stack">
+					<input
+						ref={importInputRef}
+						type="file"
+						accept="application/json"
+						style={{ display: "none" }}
+						onChange={(event) => importDocumentFile(event.target.files?.[0] ?? null)}
+					/>
+					<button className="secondary-button" onClick={() => importInputRef.current?.click()} title="Import project JSON">
+						<span>Import</span>
+					</button>
+					<button className="export-button" onClick={exportDocument} title="Export composition JSON">
+						<Download size={15} /> <span>Export JSON</span>
+					</button>
+				</div>
 			</header>
 
 			<div className="studio-grid">
 				<aside className="sidebar">
 					<div className="side-heading"><span>PROJECT</span><ChevronDown size={14} /></div>
-					<div className="project-row"><div className="project-swatch">M</div><div><strong>Untitled composition</strong><small>4.00 seconds</small></div></div>
+					<div className="project-row"><div className="project-swatch">M</div><div><strong>{projectName || "Untitled composition"}</strong><small>{PROJECT_DURATION.toFixed(2)} seconds</small></div></div>
 					<div className="side-heading layer-heading"><span>LAYERS</span><button title="Add layer" aria-label="Add layer"><Plus size={14} /></button></div>
 					<button className="layer-row selected-layer">
 						<Layers3 size={15} /><span>Brand mark</span><span className="layer-visible">●</span>
